@@ -15,8 +15,8 @@
         background: #fff;
 
         .card-header {
-            background-color: #007bff;
-            color: #fff;
+            background-color: #f4f7f9;
+            color: #174b8f;
             text-align: center;
             padding: 20px;
 
@@ -46,11 +46,11 @@
                 transition: background-color 0.3s;
 
                 &.btn-success {
-                    background-color: #28a745;
+                    background-color: #169490;
                     color: #fff;
 
                     &:hover {
-                        background-color: #218838;
+                        background-color: #209692;
                     }
                 }
 
@@ -120,5 +120,11 @@
     .btn {
         font-size: 12px;
         padding: 6px;
+    }
+
+    .logo {
+        width: 100px; /* Ajusta el tamaño */
+        height: auto;
+        border-radius: 50%; /* Ejemplo de diseño redondeado */
     }
 }

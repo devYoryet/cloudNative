@@ -1,108 +1,224 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MsalService } from '@azure/msal-angular';
 import { Router } from '@angular/router';
-import { AlertaService, AlertaMedica } from '../services/alerta.service';
-import { HttpClient } from '@angular/common/http';
+import { FormsModule } from '@angular/forms';
+import { MsalService } from '@azure/msal-angular';
+import { AlertaService } from '../services/alerta.service';
+
+interface Alerta {
+  idPaciente: string;
+  nombrePaciente: string;
+  tipo: string;
+  tipoAlerta: string;
+  nivelAlerta: string;
+  prioridad: string;
+  fechaAlerta: string;
+  ultimaActualizacion: Date;
+  doctorAsignado: string;
+  estado: string;
+}
 
 @Component({
   selector: 'app-dashboard',
-  standalone: true,
-  imports: [CommonModule],
   templateUrl: './dashboard.component.html',
-  styleUrl: './dashboard.component.scss'
+  styleUrls: ['./dashboard.component.scss'],
+  standalone: true,
+  imports: [CommonModule, FormsModule]
 })
 export class DashboardComponent implements OnInit {
-  // Lista de alertas médicas
-  //alertas: any[] = [];
-  alertas: AlertaMedica[] = [];
-
-  // Variables de control
+  // Propiedades para estadísticas
+  userName: string = '';
+  totalPacientes: number = 0;
+  alertasActivas: number = 0;
+  doctoresGuardia: number = 0;
+  monitoreando: boolean = false;
   escaneando: boolean = false;
-  intervaloID: any;
 
-  // Datos predefinidos para generación de alertas
-  nombres = ['Juan Pérez', 'María López', 'Carlos García', 'Ana Martínez'];
-  tipos = ['Cardiaca', 'Neurológica', 'Respiratoria'];
-  niveles = ['Alta', 'Media', 'Baja'];
+  // Filtros
+  filtroTipoAlerta: string = '';
+  filtroPrioridad: string = '';
+  searchTerm: string = '';
+  alertasFiltradas: Alerta[] = [];
+  alertas: Alerta[] = [];
 
   constructor(
     private msalService: MsalService,
     private router: Router,
-    private alertaService: AlertaService,
-    private httpClient: HttpClient
-  ) { }
+    private alertaService: AlertaService
+  ) {}
 
-  ngOnInit(): void {
-    // Cargar alertas desde el backend al iniciar
-    this.alertaService.obtenerAlertas().subscribe({
-      next: (data) => (this.alertas = data),
-      error: (error) => console.error('Error al cargar alertas:', error),
-    });
+  ngOnInit() {
+    this.cargarDatosIniciales();
+    this.obtenerNombreUsuario();
   }
 
-
-  // Iniciar generación de alertas
-  iniciarEscaner(): void {
-    if (!this.escaneando) {
-      this.escaneando = true;
-      this.intervaloID = setInterval(() => {
-        const nuevaAlerta: AlertaMedica = {
-          // Selecciona un nombre aleatorio de la lista
-          nombrePaciente: this.nombres[Math.floor(Math.random() * this.nombres.length)],
-          // Selecciona un tipo de alerta aleatorio
-          tipoAlerta: this.tipos[Math.floor(Math.random() * this.tipos.length)],
-          // Selecciona un nivel de alerta aleatorio
-          nivelAlerta: this.niveles[Math.floor(Math.random() * this.niveles.length)],
-          // Fecha actual
-          fechaAlerta: new Date().toISOString(),
-        };
-
-        // Guardar alerta en el backend
-        this.alertaService.guardarAlerta(nuevaAlerta).subscribe({
-          next: (alerta) => this.alertas.push(alerta),
-          error: (error) => console.error('Error al guardar alerta:', error),
-        });
-      }, 5000);
+  obtenerNombreUsuario() {
+    const account = this.msalService.instance.getActiveAccount();
+    if (account) {
+      this.userName = account.name || account.username;
     }
   }
 
-  // Detener generación de alertas
-  detenerEscaner(): void {
-    this.escaneando = false;
-    clearInterval(this.intervaloID);
+  cargarDatosIniciales() {
+    this.alertaService.obtenerAlertas().subscribe({
+      next: (alertas) => {
+        // Mapear los datos recibidos al formato que necesitamos
+        this.alertas = alertas.map(alerta => ({
+          idPaciente: alerta.idAlerta?.toString() || '',
+          nombrePaciente: alerta.nombrePaciente,
+          tipo: alerta.tipoAlerta,
+          tipoAlerta: alerta.tipoAlerta,
+          nivelAlerta: alerta.nivelAlerta,
+          prioridad: this.mapearPrioridad(alerta.nivelAlerta),
+          fechaAlerta: alerta.fechaAlerta,
+          ultimaActualizacion: new Date(alerta.fechaAlerta),
+          doctorAsignado: 'Sin asignar', // Valor por defecto
+          estado: 'activa' // Valor por defecto
+        }));
+        this.alertasFiltradas = [...this.alertas];
+        this.actualizarEstadisticas();
+      },
+      error: (error) => {
+        console.error('Error al cargar alertas:', error);
+      }
+    });
   }
 
-  // Eliminar una alerta
-  /*   eliminarAlerta(index: number): void {
-      this.alertas.splice(index, 1);
-    } */
+  private mapearPrioridad(nivelAlerta: string): string {
+    switch (nivelAlerta.toLowerCase()) {
+      case 'alto':
+        return 'alta';
+      case 'medio':
+        return 'media';
+      default:
+        return 'baja';
+    }
+  }
 
-  eliminarAlerta(index: number): void {
-    const alertaId = this.alertas[index].idAlerta;
-    if (alertaId) {
-      this.alertaService.eliminarAlerta(alertaId).subscribe({
-        next: () => this.alertas.splice(index, 1),
-        error: (error) => console.error('Error al eliminar alerta:', error),
+  actualizarEstadisticas() {
+    this.totalPacientes = new Set(this.alertasFiltradas.map(a => a.idPaciente)).size;
+    this.alertasActivas = this.alertasFiltradas.filter(a => a.estado === 'activa').length;
+    this.doctoresGuardia = new Set(this.alertasFiltradas.filter(a => a.doctorAsignado !== 'Sin asignar')
+      .map(a => a.doctorAsignado)).size;
+  }
+
+  iniciarEscaner() {
+    this.escaneando = true;
+    // Implementar lógica de escaneo
+  }
+
+  detenerEscaner() {
+    this.escaneando = false;
+  }
+
+  iniciarMonitoreo() {
+    this.monitoreando = true;
+    // Implementar lógica de monitoreo en tiempo real
+  }
+
+  detenerMonitoreo() {
+    this.monitoreando = false;
+  }
+
+  aplicarFiltros() {
+    this.alertasFiltradas = this.alertas.filter(alerta => {
+      const cumpleTipo = !this.filtroTipoAlerta || alerta.tipo.toLowerCase() === this.filtroTipoAlerta.toLowerCase();
+      const cumplePrioridad = !this.filtroPrioridad || alerta.prioridad.toLowerCase() === this.filtroPrioridad.toLowerCase();
+      const cumpleBusqueda = !this.searchTerm || 
+        alerta.nombrePaciente.toLowerCase().includes(this.searchTerm.toLowerCase());
+      
+      return cumpleTipo && cumplePrioridad && cumpleBusqueda;
+    });
+    this.actualizarEstadisticas();
+  }
+  getBadgeClass(tipo: string): string {
+    type TipoAlerta = 'vitales' | 'medicacion' | 'emergencia';
+    const clases: Record<TipoAlerta, string> = {
+      'vitales': 'bg-danger',
+      'medicacion': 'bg-warning',
+      'emergencia': 'bg-info'
+    };
+    return clases[tipo.toLowerCase() as TipoAlerta] || 'bg-secondary';
+  }
+  
+  getPrioridadClass(prioridad: string): string {
+    type NivelPrioridad = 'alta' | 'media' | 'baja';
+    const clases: Record<NivelPrioridad, string> = {
+      'alta': 'bg-danger',
+      'media': 'bg-warning',
+      'baja': 'bg-success'
+    };
+    return clases[prioridad.toLowerCase() as NivelPrioridad] || 'bg-secondary';
+  }
+  
+  getEstadoClass(estado: string): string {
+    type EstadoAlerta = 'activa' | 'pendiente' | 'atendida';
+    const clases: Record<EstadoAlerta, string> = {
+      'activa': 'bg-success',
+      'pendiente': 'bg-warning',
+      'atendida': 'bg-secondary'
+    };
+    return clases[estado.toLowerCase() as EstadoAlerta] || 'bg-secondary';
+  }
+  editarAlerta(indice: number) {
+    // Implementar lógica de edición
+    console.log('Editando alerta:', this.alertasFiltradas[indice]);
+  }
+
+  eliminarAlerta(indice: number) {
+    const alerta = this.alertasFiltradas[indice];
+    const idAlerta = parseInt(alerta.idPaciente);
+    
+    if (!isNaN(idAlerta)) {
+      this.alertaService.eliminarAlerta(idAlerta).subscribe({
+        next: () => {
+          this.alertasFiltradas = this.alertasFiltradas.filter((_, i) => i !== indice);
+          this.actualizarEstadisticas();
+        },
+        error: (error) => {
+          console.error('Error al eliminar alerta:', error);
+        }
       });
     }
   }
 
-  // Editar una alerta (puedes abrir un formulario modal)
-  editarAlerta(index: number): void {
-    const alerta = this.alertas[index];
-    alert(`Editar alerta: ${JSON.stringify(alerta)}`);
-    // Aquí podrías implementar un modal o navegación a otro componente para la edición.
+  verDetalles(alerta: Alerta) {
+    // Implementar vista detallada
+    console.log('Ver detalles de:', alerta);
   }
 
-  logout(): void {
+  asignarDoctor(alerta: Alerta) {
+    // Implementar asignación de doctor
+    console.log('Asignar doctor a:', alerta);
+  }
+
+  marcarAtendida(alerta: Alerta) {
+    const alertaActualizada = {
+      ...alerta,
+      estado: 'atendida'
+    };
+    
+    const idAlerta = parseInt(alerta.idPaciente);
+    if (!isNaN(idAlerta)) {
+      this.alertaService.actualizarAlerta(idAlerta, alertaActualizada).subscribe({
+        next: () => {
+          const index = this.alertasFiltradas.findIndex(a => a.idPaciente === alerta.idPaciente);
+          if (index !== -1) {
+            this.alertasFiltradas[index] = alertaActualizada;
+            this.actualizarEstadisticas();
+          }
+        },
+        error: (error) => {
+          console.error('Error al marcar como atendida:', error);
+        }
+      });
+    }
+  }
+
+  logout() {
     this.msalService.logoutPopup().subscribe({
-      next: () => {
-        console.log('Logout successful');
-        this.router.navigate(['/login']); // Redirige al login
-      },
-      error: (error) => console.error('Logout error:', error)
+      next: () => this.router.navigate(['/login']),
+      error: error => console.error('Error al cerrar sesión:', error)
     });
   }
-
 }
